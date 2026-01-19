@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "16751074341",
+    "project_id": "semo-37d02",
+    "storage_bucket": "semo-37d02.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:16751074341:android:716c27297cb3605e3973cc",
+        "android_client_info": {
+          "package_name": "com.mosesmbaga.semo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2O10HGp8Xqd3rN9ROPa3hoX9NonMg73c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
