@@ -27,7 +27,7 @@ void main() async {
   await _initializeFirebase();
   await AppPreferencesService.init();
   await GoogleSignIn.instance.initialize();
-  runApp(const Semo());
+  runApp(const Cineby());
 }
 
 Future<void> _flagAsMediaApp() async {
@@ -76,8 +76,8 @@ Future<void> _initializeRemoteConfig() async {
   }
 }
 
-class Semo extends StatelessWidget {
-  const Semo({super.key});
+class Cineby extends StatelessWidget {
+  const Cineby({super.key});
 
   final Color _primary = const Color(0xFFAB261D);
   final Color _background = const Color(0xFF120201);
@@ -203,16 +203,13 @@ class Semo extends StatelessWidget {
     if (style == null) {
       return null;
     }
-
     if (scale == 1.0) {
       return style;
     }
-
     final double? originalSize = style.fontSize;
     if (originalSize == null) {
       return style;
     }
-
     return style.copyWith(fontSize: originalSize * scale);
   }
 
@@ -269,7 +266,7 @@ class Semo extends StatelessWidget {
           builder: (BuildContext context, AppState state) {
             ThemeData baseTheme = _buildTheme();
             return MaterialApp(
-              title: "Semo",
+              title: "Cineby",
               debugShowCheckedModeBanner: false,
               theme: baseTheme,
               builder: (BuildContext context, Widget? child) {
