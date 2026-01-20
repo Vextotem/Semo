@@ -1,0 +1,75 @@
+name: Build and Release (Android)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., v1.0.0)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes"
+        required: false
+        type: string
+        default: "New Android release"
+
+jobs:
+  build:
+    name: "Build Android"
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Create environment variables
+        run: echo "${{ secrets.ENV }}" > .env
+
+      - name: Generate code with build_runner
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Inject Firebase Android Config
+        run: |
+          # Ensure directories exist
+          mkdir -p android/app
+          
+          # Write the configuration files from your GitHub Secrets
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+          echo '${{ secrets.FIREBASE_OPTIONS_DART }}' > lib/firebase_options.dart
+
+      - name: Decode keystore
+        run: |
+          mkdir -p android/signing
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/signing/keystore.jks
+
+      - name: Create key.properties
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cat > key.properties <<EOF
+          storeFile=../signing/keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build APKs
+        run: flutter build apk --release --split-per-abi --no-tree-shake-icons
+
+      - name: Upload APKs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apks
+          path: build/app/outputs/flutter-apk/*.apk
