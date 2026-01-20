@@ -14,9 +14,12 @@ on:
         default: "New Android release"
 
 jobs:
-  build:
-    name: "Build Android"
+  build-and-release:
+    name: "Build and Release"
     runs-on: macos-latest
+    permissions:
+      contents: write # Required to create the GitHub Release
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -39,10 +42,7 @@ jobs:
 
       - name: Inject Firebase Android Config
         run: |
-          # Ensure directories exist
           mkdir -p android/app
-          
-          # Write the configuration files from your GitHub Secrets
           echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
           echo '${{ secrets.FIREBASE_OPTIONS_DART }}' > lib/firebase_options.dart
 
@@ -68,8 +68,11 @@ jobs:
       - name: Build APKs
         run: flutter build apk --release --split-per-abi --no-tree-shake-icons
 
-      - name: Upload APKs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apks
-          path: build/app/outputs/flutter-apk/*.apk
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.event.inputs.version }} \
+            --title "Release ${{ github.event.inputs.version }}" \
+            --notes "${{ github.event.inputs.release_notes }}" \
+            build/app/outputs/flutter-apk/*.apk
