@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release (Android Only)
 
 on:
   workflow_dispatch:
@@ -8,25 +8,17 @@ on:
         required: true
         type: string
       release_notes:
-        description: 'Release notes: JSON list or text (both supporting markdown). Example: ["feat: X", "fix: Y"]'
+        description: "Release notes"
         required: false
         type: string
-        default: "New release"
-
-concurrency:
-  group: build_and_release
-  cancel-in-progress: false
+        default: "New Android release"
 
 jobs:
-  build:
-    name: "Build"
+  build-and-release:
+    name: "Build and Release"
     runs-on: macos-latest
     permissions:
-      actions: read
-      contents: read
-
-    outputs:
-      build-success: ${{ job.status == 'success' }}
+      contents: write # Crucial for creating the GitHub Release
 
     steps:
       - name: Checkout code
@@ -34,168 +26,57 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Initialize log capture
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/github_action_logs
-          : > $GITHUB_WORKSPACE/github_action_logs/all.log
 
       - name: Set up Flutter
-        if: ${{ success() }}
         uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "latest"
-
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools@latest
-
-      - name: Install FlutterFire CLI
-        run: dart pub global activate flutterfire_cli
-
       - name: Install Flutter dependencies
-        if: ${{ success() }}
-        run: |
-          set -o pipefail
-          { flutter pub get; } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
+        run: flutter pub get
 
       - name: Create environment variables
-        if: ${{ success() }}
-        run: |
-          set -o pipefail
-          {
-            touch .env
-            echo "${{ secrets.ENV }}" > .env
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
-
-      - name: Extract packages from pubspec.yaml
-        run: |
-          set -o pipefail
-          {
-            mkdir -p assets/gen
-            yq -o json eval '.dependencies | keys | map(select(. != "flutter"))' pubspec.yaml > assets/gen/pub_packages.json
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
+        run: echo "${{ secrets.ENV }}" > .env
 
       - name: Generate code with build_runner
-        if: ${{ success() }}
-        run: |
-          set -o pipefail
-          { dart run build_runner build --delete-conflicting-outputs; } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
+        run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Set up Firebase credentials
+      - name: Inject Firebase Android Config
         run: |
-          set -o pipefail
-          {
-            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > $HOME/firebase_service_account.json
-            echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase_service_account.json" >> $GITHUB_ENV
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
-
-      - name: Add Firebase config files
-        run: |
-          set -o pipefail
-          {
-            flutterfire configure \
-            --project=${{ secrets.FIREBASE_PROJECT_ID }} \
-            --platforms=android,ios \
-            --overwrite-firebase-options
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
-
-      - name: Analyze with Dart
-        if: ${{ success() }}
-        run: |
-          set -o pipefail
-          { dart analyze --fatal-infos --fatal-warnings; } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
+          mkdir -p android/app
+          # Create the native Android config file
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+          # Create the Flutter-side Firebase options
+          echo '${{ secrets.FIREBASE_OPTIONS_DART }}' > lib/firebase_options.dart
 
       - name: Decode keystore
-        if: ${{ success() }}
         run: |
-          set -o pipefail
-          {
-            mkdir -p android/signing
-            touch android/signing/keystore.jks
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/signing/keystore.jks
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
+          mkdir -p android/signing
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/signing/keystore.jks
 
       - name: Create key.properties
-        if: ${{ success() }}
         working-directory: android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          set -o pipefail
-          {
           cat > key.properties <<EOF
           storeFile=../signing/keystore.jks
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
           EOF
-          } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
 
       - name: Build APKs
-        if: ${{ success() }}
-        run: |
-          set -o pipefail
-          { flutter build apk --release --split-per-abi --no-tree-shake-icons; } 2>&1 | tee -a $GITHUB_WORKSPACE/github_action_logs/all.log
-
-      - name: Upload APKs artifact
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apks
-          path: build/app/outputs/flutter-apk/*.apk
-
-  release-and-deploy:
-    name: "Release and Deploy"
-    runs-on: macos-latest
-    needs: build
-    if: ${{ needs.build.outputs.build-success == 'true' }}
-    permissions:
-      actions: read
-      contents: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download APKs artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-release-apks
-          path: ./artifacts/
-
-      - name: Prepare release notes file
-        env:
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
-        run: |
-          set -o pipefail
-          python3 .github/ci-scripts/prepare_release_notes.py RELEASE_NOTES.md
+        run: flutter build apk --release --split-per-abi --no-tree-shake-icons
 
       - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          release_name: Release ${{ github.event.inputs.version }}
-          body_path: RELEASE_NOTES.md
-          draft: false
-          prerelease: false
-
-      - name: Upload APKs to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.event.inputs.version }} ./artifacts/*.apk --clobber
+          # Uses the GitHub CLI (installed by default on runners) to create the release
+          gh release create ${{ github.event.inputs.version }} \
+            --title "Release ${{ github.event.inputs.version }}" \
+            --notes "${{ github.event.inputs.release_notes }}" \
+            build/app/outputs/flutter-apk/*.apk
